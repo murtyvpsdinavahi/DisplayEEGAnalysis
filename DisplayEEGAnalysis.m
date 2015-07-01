@@ -5,7 +5,16 @@
 function DisplayEEGAnalysis%(dataLog)%(expDate,protocolName,folderSourceString,gridType)
 
 % Initialise
-[dataLog,folderName] = getFolderDetails;
+logExist = evalin('base','(exist(''dataLog'',''var''))');
+if  ~logExist
+    uiopen;
+    if ~exist('dataLog','var'); return; end;
+else
+    if logExist;    dataLog = evalin('base','dataLog'); end;
+end
+
+[dataLog,folderName] = getFolderDetails(dataLog);
+
 monkeyName = strjoin(dataLog(1,2));
 gridType=strjoin(dataLog(2,2));
 expDate = strjoin(dataLog(3,2));
@@ -1718,7 +1727,9 @@ hold off;
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     function paintPos
         analogChannelPos = get(hAnalogChannel,'val');
-        if (strcmp(dataLog{2,2},'EEG') && (analogChannelPos>dataLog{7,2}))
+        anaChFlag = find(dataLog{7,2} == analogChannelPos);
+        if (strcmp(dataLog{2,2},'EEG') && (isempty(anaChFlag)))
+%         if (strcmp(dataLog{2,2},'EEG') && (analogChannelPos>dataLog{7,2}))
             set(hMessageText,'string','Ainp, not an EEG electrode');
             return
         end
