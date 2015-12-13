@@ -4,6 +4,7 @@
 % duration across all electrodes as a scalp map, and change of power of a
 % specified frequency band in a given time range from a specified baseline
 % period, calculated using STFT.
+% Also plots ERP/FFT/STFT for all electrodes simultaneously for comparison.
 %
 % Syntax: plotEEGAllElec(dataLog)
 % dataLog input is optional; It is a cell containing all the info regarding the
@@ -28,8 +29,8 @@
 %     'Montage'                  'actiCap64'   
 %     'Re-Ref Elec'              'None'   
 %
-% This program uses topoplot function of EEGLAB and routines of the chronux
-% toolbox, and currently supports GAV protocol only. Minor changes are
+% This program uses topoplot and readlocs functions of EEGLAB and routines of the 
+% chronux toolbox, and currently supports GAV protocol only. Minor changes are
 % required to incorporate other protocols as far as getting data is concerned, 
 % but please do not change the general structure of the program unless
 % required.
@@ -47,9 +48,15 @@
 %       loadParameterCombinations.m
 %       loadAnalogData.m
 %       getFolderDetails.m
+%       plotForAllEEGElecs.m
+%       conv2Log.m
 %
-% Created by Murty V P S Dinavahi, 03-07-15
-%
+% Revision History:
+% 03-07-15: Created by Murty V P S Dinavahi (MD)
+% 03-09-15: Modified by MD, Added options for bipolar (nearest neighbour)
+%   montaging.
+% 09-11-15: Modified by MD, Added options for plotting ERP/FFT/STFT for all
+%   electrodes simultaneously for comparison between electrodes.
 
 function plotEEGAllElec(dataLog)
 %% Initialise
@@ -74,6 +81,7 @@ deltaT = dataLog{6,2};
 gridMontage = dataLog{15,2};
 subjectName = strjoin(dataLog(1,2));
 expDate = strjoin(dataLog(3,2));
+
 %% Load Data
 folderExtract = fullfile(folderName,'extractedData');
 folderSegment = fullfile(folderName,'segmentedData');
@@ -82,6 +90,8 @@ folderLFP = fullfile(folderSegment,'LFP');
 [analogChannelsStored,timeVals,~,analogInputNums,~] = loadlfpInfo(folderLFP);
 chanlocs = loadChanLocs(gridMontage);
 
+% The following variables are stored instance variables to account for cost of
+% computation
 plotData = [];
 goodPos = [];
 Data = [];
@@ -98,7 +108,6 @@ resetAudAinpFlag = 1;
 resetERPElecFlag = 1;
 resetERPRange = 1;
 TFPlotFlag = 1;
-resetTFFlag = 1;
 resetEpochRangeFlag = 1;
 
 %% Get Combinations
@@ -354,11 +363,11 @@ uicontrol('Parent',hTimingsPanel,'Unit','Normalized', ...
 hStimPeriodMin = uicontrol('Parent',hTimingsPanel,'Unit','Normalized', ...
     'BackgroundColor', backgroundColor, ...
     'Position',[timingTextWidth 1-9*timingHeight timingBoxWidth timingHeight], ...
-    'Style','edit','String',num2str(stimPeriod(1)),'FontSize',fontSizeSmall,'Callback',{@resetTFFlag_Callback});
+    'Style','edit','String',num2str(stimPeriod(1)),'FontSize',fontSizeSmall); 
 hStimPeriodMax = uicontrol('Parent',hTimingsPanel,'Unit','Normalized', ...
     'BackgroundColor', backgroundColor, ...
     'Position',[timingTextWidth+timingBoxWidth 1-9*timingHeight timingBoxWidth timingHeight], ...
-    'Style','edit','String',num2str(stimPeriod(2)),'FontSize',fontSizeSmall,'Callback',{@resetTFFlag_Callback});
+    'Style','edit','String',num2str(stimPeriod(2)),'FontSize',fontSizeSmall); 
 
 % Frequency Band
 fBandLow = 30; fBandHigh = 80;
@@ -368,11 +377,11 @@ uicontrol('Parent',hTimingsPanel,'Unit','Normalized', ...
 hfBandLow = uicontrol('Parent',hTimingsPanel,'Unit','Normalized', ...
     'BackgroundColor', backgroundColor, ...
     'Position',[timingTextWidth 1-10*timingHeight timingBoxWidth timingHeight], ...
-    'Style','edit','String',num2str(fBandLow),'FontSize',fontSizeSmall,'Callback',{@resetTFFlag_Callback});
+    'Style','edit','String',num2str(fBandLow),'FontSize',fontSizeSmall); 
 hfBandHigh = uicontrol('Parent',hTimingsPanel,'Unit','Normalized', ...
     'BackgroundColor', backgroundColor, ...
     'Position',[timingTextWidth+timingBoxWidth 1-10*timingHeight timingBoxWidth timingHeight], ...
-    'Style','edit','String',num2str(fBandHigh),'FontSize',fontSizeSmall,'Callback',{@resetTFFlag_Callback});
+    'Style','edit','String',num2str(fBandHigh),'FontSize',fontSizeSmall); 
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -452,11 +461,14 @@ uicontrol('Parent',hTFParamPanel,'Unit','Normalized', ...
     'Position',[0.1 1-9*timingHeight 0.8 timingHeight],...
     'Style','pushbutton','String','Plot TF Plots','FontSize',fontSizeSmall,'Callback',{@plotTF_Callback});
 
+uicontrol('Parent',hTFParamPanel,'Unit','Normalized', ...
+    'Position',[0.1 1-10*timingHeight 0.37 timingHeight],...
+    'Style','pushbutton','String','Plot TF All Elec','FontSize',fontSizeSmall,'Callback',{@plotTFAllElec_Callback});
 
-% % Plot button for electrode pooling
-% uicontrol('Parent',hTFParamPanel,'Unit','Normalized', ...
-%     'Position',[0.1 1-10*timingHeight 0.8 timingHeight],...
-%     'Style','pushbutton','String','Pool elecs and Plot ERP ','FontSize',fontSizeSmall,'Callback',{@plotPoolElecs_Callback});
+uicontrol('Parent',hTFParamPanel,'Unit','Normalized', ...
+    'Position',[0.53 1-10*timingHeight 0.37 timingHeight],...
+    'Style','pushbutton','String','Plot FFT All Elec','FontSize',fontSizeSmall,'Callback',{@plotFFTAllElec_Callback});
+
     
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%% ERP Options panel %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -518,6 +530,10 @@ uicontrol('Parent',hOptionsPanel,'Unit','Normalized', ...
 uicontrol('Parent',hOptionsPanel,'Unit','Normalized', ...
     'Position',[0.1 1-6*timingHeight 0.8 timingHeight],...
     'Style','pushbutton','String','Clear all','FontSize',fontSizeSmall,'Callback',{@cla_Callback});
+
+uicontrol('Parent',hOptionsPanel,'Unit','Normalized', ...
+    'Position',[0.1 1-7*timingHeight 0.8 timingHeight],...
+    'Style','pushbutton','String','Plot ERP All Elecs','FontSize',fontSizeSmall,'Callback',{@plotERPAllElecs_Callback});
 
 % Elecs for pooling: ERP
 uicontrol('Parent',hOptionsPanel,'Unit','Normalized', ...
@@ -619,22 +635,30 @@ capERPRefHandle = subplot('Position',electrodeCapPosERPRef); axis off;
         end        
         
         % Plot Visual Stimulus
-        if visAinp<length(analogInputNums)
+        if visAinp<length(analogInputNums)+1
             if resetVisAinpFlag || resetEpochRangeFlag
-                clear erp;            
-                visData = getAinpDataGAV(a,e,s,f,o,c,t,aa,ae,as,ao,av,at,folderName,folderLFP,visAinp);
-                erp = mean(visData(:,tERP),1);
-                plot(plotVisStimHandle,timeVals(tERP),erp); xlim(plotVisStimHandle,[epochMin epochMax]);
+                clear erp;   
+                try
+                    visData = getAinpDataGAV(a,e,s,f,o,c,t,aa,ae,as,ao,av,at,folderName,folderLFP,visAinp);
+                    erp = mean(visData(:,tERP),1);
+                    plot(plotVisStimHandle,timeVals(tERP),erp); xlim(plotVisStimHandle,[epochMin epochMax]);
+                catch
+                    disp('No Analog Data or Analog Data could not be read!')
+                end
             end
         end
         
         % Plot Auditory Stimulus
-        if audAinp<length(analogInputNums)
+        if audAinp<length(analogInputNums)+1
             if resetAudAinpFlag || resetEpochRangeFlag
-                clear erp;            
-                audData = getAinpDataGAV(a,e,s,f,o,c,t,aa,ae,as,ao,av,at,folderName,folderLFP,audAinp);
-                erp = mean(audData(:,tERP),1);
-                plot(plotAudStimHandle,timeVals(tERP),erp); xlim(plotAudStimHandle,[epochMin epochMax]);
+                clear erp;  
+                try
+                    audData = getAinpDataGAV(a,e,s,f,o,c,t,aa,ae,as,ao,av,at,folderName,folderLFP,audAinp);
+                    erp = mean(audData(:,tERP),1);
+                    plot(plotAudStimHandle,timeVals(tERP),erp); xlim(plotAudStimHandle,[epochMin epochMax]);
+                catch
+                    disp('No Analog Data or Analog Data could not be read!')
+                end
             end
         end
         
@@ -649,12 +673,15 @@ capERPRefHandle = subplot('Position',electrodeCapPosERPRef); axis off;
                 erpData = erpRefData;
             end            
             
+            if length(goodPos{ERPElec}) == 1
+                erpData = erpData';
+            end
+            
             erp = mean((erpData - repmat(mean(erpData(:,blPeriod),2),1,size(erpData,2))),1); % Correct for DC Shift (baseline correction)
             erpRef = mean((erpRefData - repmat(mean(erpRefData(:,blPeriod),2),1,size(erpRefData,2))),1); % Correct for DC Shift (baseline correction)
             
             plot(plotERPHandle,timeVals(tERP),erp); xlim(plotERPHandle,[epochMin epochMax]);
-%             text(0.1,0.9,['ERP; n = ' num2str(length(goodPos{ERPElec})) '. Y-axis reveresed.'],'unit','normalized','fontsize',9,'Parent',plotERPHandle);
-            text(0.1,0.9,['ERP; Y-axis reveresed.'],'unit','normalized','fontsize',9,'Parent',plotERPHandle);
+            text(0.1,0.9,['ERP; n = ' num2str(length(goodPos{ERPElec})) '. Y-axis reveresed.'],'unit','normalized','fontsize',9,'Parent',plotERPHandle);
             set(plotERPHandle,'Ydir','reverse');
             
             plot(plotERPRefHandle,timeVals(tERP),erpRef); xlim(plotERPRefHandle,[epochMin epochMax]);
@@ -696,6 +723,186 @@ capERPRefHandle = subplot('Position',electrodeCapPosERPRef); axis off;
         resetEpochRangeFlag = 0;
     end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+    function plotERPAllElecs_Callback(~,~)
+        
+        % Intitialise             
+        a=get(hAzimuth,'val');
+        e=get(hElevation,'val');
+        s=get(hSigma,'val');
+        f=get(hSpatialFreq,'val');
+        o=get(hOrientation,'val');
+        c=get(hContrast,'val');
+        t=get(hTemporalFreq,'val');
+        aa=get(hAudAzimuth,'val');
+        ae=get(hAudElevation,'va');
+        as=get(hRipFreq,'val');
+        ao=get(hRipPhase,'val');        
+        av=get(hRipModDepth,'val');
+        at=get(hRipVelocity,'val');
+        
+        % ERP Variables        
+        epochMin = str2double(get(hEpochMin,'string'));
+        epochMax = str2double(get(hEpochMax,'string'));
+        
+        tERP = (timeVals>=epochMin) & (timeVals<=epochMax);
+        blPeriod = (timeVals<=0);
+        if ~blPeriod
+            blPeriod = tERP;
+        end
+        
+        % Get Data
+        if resetParamsFlag
+            [plotData,trialNums,allBadTrials] = getDataGAV(a,e,s,f,o,c,t,aa,ae,as,ao,av,at,folderName,folderLFP,analogChannelsStored);            
+        end
+        
+        if refChangeFlag
+            [Data,goodPos] = bipolarRef(trialNums,allBadTrials);
+        end        
+        
+        % Calculate ERP
+        erp = zeros(size(Data,1),length(tERP));
+        for ERPElec = 1:size(Data,1)
+            clear erpData;            
+            erpData = squeeze(Data(ERPElec,goodPos{ERPElec},tERP));
+            if length(goodPos{ERPElec}) == 1
+                erpData = erpData';
+            end
+            erp(ERPElec,:) = mean((erpData - repmat(mean(erpData(:,blPeriod),2),1,size(erpData,2))),1); % Correct for DC Shift (baseline correction)
+        end
+        
+        % Plot ERP
+        erpPlotsData.erp = erp;
+        erpPlotsData.time = timeVals(tERP);        
+        plotForAllEEGElecs(chanlocs,erpPlotsData)
+        
+        % Reset all flags to 0
+        resetParamsFlag = 0;
+        refChangeFlag = 0;        
+    end
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+    function plotTFAllElec_Callback(~,~)
+        
+        % Intitialise        
+        a=get(hAzimuth,'val');
+        e=get(hElevation,'val');
+        s=get(hSigma,'val');
+        f=get(hSpatialFreq,'val');
+        o=get(hOrientation,'val');
+        c=get(hContrast,'val');
+        t=get(hTemporalFreq,'val');
+        aa=get(hAudAzimuth,'val');
+        ae=get(hAudElevation,'va');
+        as=get(hRipFreq,'val');
+        ao=get(hRipPhase,'val');        
+        av=get(hRipModDepth,'val');
+        at=get(hRipVelocity,'val');
+        
+        % get timings and frequency band
+        BLMin = str2double(get(hBaselineMin,'string'));
+        BLMax = str2double(get(hBaselineMax,'string'));
+        
+        % Get Data
+        if resetParamsFlag
+            [plotData,trialNums,allBadTrials] = getDataGAV(a,e,s,f,o,c,t,aa,ae,as,ao,av,at,folderName,folderLFP,analogChannelsStored);            
+        end
+        
+        if refChangeFlag
+            [Data,goodPos] = bipolarRef(trialNums,allBadTrials);
+        end   
+        
+        % Plot TF-plot
+        if paramChangeFlag || TFPlotFlag
+            clear dSPower
+            hPD = waitbar(0,['Analysing electrode 1 of ' num2str(size(Data,1)) ' electrodes...']);
+            for i=1:size(Data,1)
+                waitbar((i/size(Data,1)),hPD,['Analysing electrode ' num2str(i) ' of ' num2str(size(Data,1)) ' electrodes...']);
+                dataTF=Data(i,goodPos{i},:);
+                dataTF=squeeze(dataTF);                    
+
+                [~,dS1,t2,f2] = getSTFT(dataTF,movingWin,mtmParams,timeVals,BLMin,BLMax);
+                dSPower(i,:,:) = dS1;
+            end        
+            close(hPD);
+            clear hPD;
+        end
+        
+        % Plot STFT
+        stftData.power = dSPower;
+        stftData.t = t2;
+        stftData.f = f2;
+        plotForAllEEGElecs(chanlocs,stftData,'STFT')
+        
+        TFPlotFlag = 0;
+        resetParamsFlag = 0;
+        refChangeFlag = 0;
+        paramChangeFlag = 0;
+    end
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+    function plotFFTAllElec_Callback(~,~)
+        % Intitialise             
+        a=get(hAzimuth,'val');
+        e=get(hElevation,'val');
+        s=get(hSigma,'val');
+        f=get(hSpatialFreq,'val');
+        o=get(hOrientation,'val');
+        c=get(hContrast,'val');
+        t=get(hTemporalFreq,'val');
+        aa=get(hAudAzimuth,'val');
+        ae=get(hAudElevation,'va');
+        as=get(hRipFreq,'val');
+        ao=get(hRipPhase,'val');        
+        av=get(hRipModDepth,'val');
+        at=get(hRipVelocity,'val');
+        
+        % FFT Variables
+        BLMin = str2double(get(hBaselineMin,'string'));
+        BLMax = str2double(get(hBaselineMax,'string'));
+        STMin = str2double(get(hStimPeriodMin,'string'));
+        STMax = str2double(get(hStimPeriodMax,'string'));
+        
+        tBL = intersect(find(timeVals>=BLMin),find(timeVals<=BLMax)); % baseline time indices
+        tST = intersect(find(timeVals>=STMin),find(timeVals<=STMax)); % stimulus time indices
+        
+        Fs = mtmParams.Fs;
+        N = length(tST);%((BLMin):BLMax));
+        L = N/Fs;        
+        fAxis = (0:1:(N-1))*(1/L);
+        
+        % Get Data
+        if resetParamsFlag
+            [plotData,trialNums,allBadTrials] = getDataGAV(a,e,s,f,o,c,t,aa,ae,as,ao,av,at,folderName,folderLFP,analogChannelsStored);            
+        end
+        
+        if refChangeFlag
+            [Data,goodPos] = bipolarRef(trialNums,allBadTrials);
+        end        
+        
+        % Calculate FFT
+        fftStim = zeros(size(Data,1),length(tST));
+        fftBL = zeros(size(Data,1),length(tBL));
+        for FFTElec = 1:size(Data,1)
+            clear STData BLData;            
+            STData = squeeze(Data(FFTElec,goodPos{FFTElec},tST));
+            BLData = squeeze(Data(FFTElec,goodPos{FFTElec},tBL));
+            fftStim(FFTElec,:) = conv2Log(mean(abs(fft(STData,[],2)),1));
+            fftBL(FFTElec,:) = conv2Log(mean(abs(fft(BLData,[],2)),1));
+        end
+        
+        % Plot FFT
+        fftData.stim = fftStim;
+        fftData.bl = fftBL;
+        fftData.fAxis = fAxis;
+        plotForAllEEGElecs(chanlocs,fftData,'FFT')
+        
+        % Reset all flags to 0
+        resetParamsFlag = 0;
+        refChangeFlag = 0;        
+    end
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
     function plotTF_Callback(~,~)
         
         % Intitialise        
@@ -862,13 +1069,11 @@ capERPRefHandle = subplot('Position',electrodeCapPosERPRef); axis off;
             hWD = waitbar(0,['Creating hem_bipolar data for electrode 1 of ' num2str(size(plotData,1)) ' electrodes...']);
             for iH = 1:size(plotData,1)
                 waitbar((iH/size(plotData,1)),hWD,['Creating bipolar data for electrode ' num2str(iH) ' of ' num2str(size(plotData,1)) ' electrodes...']);
-%                 badPos{iH} = union(allBadTrials{hemBipolarLocs(iH,1)},allBadTrials{hemBipolarLocs(iH,2)});
                 Data(iH,:,:) = plotData(hemBipolarLocs(iH,1),:,:) - plotData(hemBipolarLocs(iH,2),:,:);
             end
             close(hWD);
             clear hWD;
         elseif refChanIndex == 3 % average referencing
-%             badPos = allBadTrials;
             chanlocs = loadChanLocs(gridMontage,refChanIndex);
             for iBP = 1:size(allBadTrials,2)
                 goodTrials = setdiff(trialNums,allBadTrials{iBP});
@@ -930,7 +1135,9 @@ capERPRefHandle = subplot('Position',electrodeCapPosERPRef); axis off;
             for iR = 1:size(plotData,1)
                 waitbar((iR/size(plotData,1)),hRD,['Rereferencing data for electrode ' num2str(iR) ' of ' num2str(size(plotData,1)) ' electrodes...']);
                 Data(iR,:,:) = plotData(iR,:,:) - plotData(refChanIndex,:,:);
-                badPos{iR} = intersect(allBadTrials{iR},allBadTrials{refChanIndex});
+                badPos{iR} = union(allBadTrials{iR},allBadTrials{refChanIndex});
+                goodTrials = setdiff(trialNums,badPos{iR});
+                goodPos{iR} = find(ismember(trialNums,goodTrials));
             end
 %             Data((iR+1),:,:) = (-1)*plotData(refChanIndex,:,:);
             close(hRD);
@@ -950,19 +1157,6 @@ capERPRefHandle = subplot('Position',electrodeCapPosERPRef); axis off;
         end
     end
 
-% %% data for stimulus period
-% % data
-% for iE = 1:size(Data,1)
-%     dataStim = squeeze(Data(iE,goodPos{iE},tERPTopo));
-% %     dcShift = mean(Data(iE,goodPos{iE},blPeriod),3);
-% %     dcShiftVector = repmat(dcShift,1,size(dataStim,2));
-%     dataBL = squeeze(Data(iE,goodPos{iE},tERPTopoBL));
-% 
-% %     erpST = dataStim - dcShiftVector;
-% %     erpBL = dataBL - dcShiftVector;
-%     erp(iE) = mean(mean((erpST - erpBL),1),2);
-% end
-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     function resetMTMParams_Callback(~,~)
         mtmParams.Fs = str2double(get(hMTMFs,'String'));
@@ -974,7 +1168,6 @@ capERPRefHandle = subplot('Position',electrodeCapPosERPRef); axis off;
         
         paramChangeFlag = 1;
         TFPlotFlag = 1;
-%         resetTFFlag = 1;
     end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -991,7 +1184,6 @@ capERPRefHandle = subplot('Position',electrodeCapPosERPRef); axis off;
         resetAudAinpFlag = 1;
         resetERPElecFlag = 1;
         resetERPRange = 1;
-%         resetTFFlag = 1;
         resetEpochRangeFlag = 1;
     end
 
@@ -1004,7 +1196,6 @@ capERPRefHandle = subplot('Position',electrodeCapPosERPRef); axis off;
         resetAudAinpFlag = 1;
         resetERPElecFlag = 1;
         resetERPRange = 1;
-%         resetTFFlag = 1;
         TFPlotFlag = 1;
         resetEpochRangeFlag = 1;
     end
@@ -1034,7 +1225,6 @@ capERPRefHandle = subplot('Position',electrodeCapPosERPRef); axis off;
         end
         refChangeFlag = 1;
         paramChangeFlag = 1;
-%         resetTFFlag = 1;
         TFPlotFlag = 1;
     end
 
@@ -1059,16 +1249,11 @@ capERPRefHandle = subplot('Position',electrodeCapPosERPRef); axis off;
     end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-    function resetTFFlag_Callback(~,~)
-%         resetTFFlag = 1;
-    end
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     function resetEpochRangeFlag_Callback(~,~)
         resetEpochRangeFlag = 1;
     end
 
-
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -1128,6 +1313,7 @@ end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 function ainpData = getAinpDataGAV(a,e,s,f,o,c,t,aa,ae,as,ao,av,at,folderName,folderLFP,analogInput)
+
     % Load Trial Numbers for the given Parameter Combinations
     folderExtract = fullfile(folderName,'extractedData');
     folderSegment = fullfile(folderName,'segmentedData');
@@ -1142,7 +1328,7 @@ function ainpData = getAinpDataGAV(a,e,s,f,o,c,t,aa,ae,as,ao,av,at,folderName,fo
     trialNums = cell2mat(parameterCombinations(a,e,s,f,o,c,t,aa,ae,as,ao,av,at));
     
     % Extraction
-    goodTrials = setdiff(trialNums,badTrials);    
+    goodTrials = setdiff(trialNums,badTrials);
     analogData = loadAnalogData(fullfile(folderLFP,['ainp' num2str(analogInput) '.mat']));
     ainpData = analogData(goodTrials,:);
     clear analogData
